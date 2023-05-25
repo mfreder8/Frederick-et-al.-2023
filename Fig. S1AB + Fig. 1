@@ -1,0 +1,449 @@
+### load libraries
+
+```{r, echo=T}
+library(RColorBrewer)
+library(ggplot2)
+library(viridisLite)
+library(readxl)
+library(ggpubr)
+library(tidyverse)
+library(plotly)
+library(dendextend)
+library(colorspace)
+library(ggdendro)
+library(grid)
+library(cowplot)
+library(ggfortify)
+library(openxlsx)
+library("gplots")
+```
+
+
+# start with proteomics 
+
+# Exploratory Data Analysis
+
+```{r, echo=T}
+
+PSM <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/Proteome/Perseus/Post Hoc/proteome_no imputation_PSMs_R.txt")
+
+perseus <- t(scale(t(PSM)))
+
+pca_res <- prcomp(t(perseus))
+# creates a data table containing the principal component analysis info 
+
+var_explained = pca_res$sdev^2 / sum(pca_res$sdev^2)
+scree <- qplot(c(1:9), var_explained) + geom_line() + xlab("Principal Component") + ylab("Variance Explained") + ggtitle("Scree Plot") + ylim(0, 1) + xlim(1, 9) + scale_x_continuous(breaks=c(1:9))
+# make interactive
+int <- ggplotly(scree)
+int
+
+rowNames <- c(rep.int("adherent",3), rep.int("spheroid",3), rep.int("re-adherent",3))
+colData <- data.frame(row.names=rownames(pca_res$x),status=as.factor(rowNames))
+
+# get % variation for each PC 
+pca_res$percentVar <- pca_res$sdev^2/sum(pca_res$sdev^2)
+
+# change scale to reflect % variation
+d <- t(data.frame(t(pca_res$x)*pca_res$percentVar))
+
+# merge metadata and modified PC scores by row.names (by=0)
+d <- merge(d,colData,by=0) 
+
+# make the base plot (PC1 vs PC2)
+g <- ggplot(d,aes(x=PC1,y=PC2)) + theme_linedraw() + theme(text = element_text(family = "Arial", size=12))
+# display the plot
+PCA <- g + geom_point(size=2, aes(colour=status)) + geom_point(size=4,alpha=0.5, aes(colour=status)) + scale_colour_manual(breaks=rowNames) + scale_colour_manual(values=c("#9F83A8", "#98BBC7", "#9FA1C3")) + labs(x="Principal Component 1 (49.1%)", y="Principal Component 2 (13.9%)", col="Biological Group") + theme(legend.position = "bottom")
+PCA
+
+# make interactive
+int <- ggplotly(PCA)
+int
+```
+
+### heatmap + clustering
+
+```{r, echo=T}
+
+# import perseus results
+PSM <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/Proteome/Perseus/Post Hoc/proteome_no imputation_PSMs_sig.txt")
+
+z_scored <- t(scale(t(PSM)))
+
+# mapping/statistical creation of clusters
+n <- nrow(z_scored)
+clust <- hclust(dist(z_scored[c(1:n), ]))
+dend <- as.dendrogram(clust)
+
+dend.1 <- color_branches(dend, k=5, col=c("#00a775","#ff4178","#7D82B8","#aee5c2","#523E79")) %>% set("labels", "") 
+#plot(dend.1)
+
+# using base heatmap function
+heatmap_1 <- as.matrix(z_scored)
+
+# set colours with custom scale
+coul.1 <- colorRampPalette(c("#00c087","#faffff","#ff4178"))
+coul.2 <- coul.1(5000)
+
+cc.1 <- rep(c("#ffa6c0", "#af90b6", "#4f8096"), each=3)
+# 3 shades for 3 conditions 
+
+par(oma=c(1,10,1,5)); heatmap.2(x=heatmap_1, Rowv=dend.1, col=coul.2, trace="none", ColSideColors=rep(c("#ffa6c0", "#af90b6", "#4f8096"), each=3), margins = c(6,3), labRow = FALSE, density.info="none", key.xlab="", key.ylab="", key.title="z-score", key.par=list(mar=c(3,0,3,2)), ylab="protein", xlab="biological condition", cexCol = 1)
+
+#write clusters to the heatmap
+clust_out <- cutree(clust, k = 5, h = NULL)
+clusters <- cbind(heatmap_1, clust_out)
+clusters <- as.matrix(clusters)
+
+write.csv(clusters, "~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/Proteome/Perseus/Post Hoc/proteome_clusters.csv")
+
+```
+
+### pairwise clustering
+
+```{r, echo=T}
+# adh vs sph
+
+
+# import perseus results
+PSM_AS <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/Proteome/Perseus/Post Hoc/proteome_sig_pairwise_AS.txt", header = TRUE, row.names = 1)
+
+z_scored_AS <- t(scale(t(PSM_AS)))
+
+# mapping/statistical creation of clusters
+n <- nrow(z_scored_AS)
+clust <- hclust(dist(z_scored_AS[c(1:n), ]))
+dend <- as.dendrogram(clust)
+
+dend.1 <- color_branches(dend, k=2, col=c("#007c4d","#a3003d")) %>% set("labels", "") 
+#plot(dend.1)
+
+# using base heatmap function
+heatmap_1 <- as.matrix(z_scored_AS)
+
+# set colours with custom scale
+coul.1 <- colorRampPalette(c("#00c087","#faffff","#ff4178"))
+coul.2 <- coul.1(5000)
+
+cc.1 <- rep(c("#ffa6c0", "#af90b6"), each=3)
+# 2 shades for 2 conditions 
+
+par(oma=c(1,10,1,5)); heatmap.2(x=heatmap_1, Rowv=dend.1, col=coul.2, trace="none", ColSideColors=rep(c("#ffa6c0", "#af90b6"), each=3), margins = c(6,3), labRow = FALSE, density.info="none", key.xlab="", key.ylab="", key.title="z-score", key.par=list(mar=c(3,0,3,2)), ylab="protein", xlab="biological condition", cexCol = 1)
+
+#write clusters to the heatmap
+clust_out <- cutree(clust, k = 2, h = NULL)
+clusters <- cbind(heatmap_1, clust_out)
+clusters <- as.matrix(clusters)
+
+write.csv(clusters, "~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/Proteome/Perseus/Post Hoc/proteome_clusters_AS.csv")
+```
+
+```{r, echo=T}
+# sph vs read
+
+
+# import perseus results
+PSM_SR <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/Proteome/Perseus/Post Hoc/proteome_sig_pairwise_SR.txt", header = TRUE, row.names = 1)
+
+z_scored_SR <- t(scale(t(PSM_SR)))
+
+# mapping/statistical creation of clusters
+n <- nrow(z_scored_SR)
+clust <- hclust(dist(z_scored_SR[c(1:n), ]))
+dend <- as.dendrogram(clust)
+
+dend.1 <- color_branches(dend, k=2, col=c("#a3003d","#007c4d")) %>% set("labels", "") 
+#plot(dend.1)
+
+# using base heatmap function
+heatmap_1 <- as.matrix(z_scored_SR)
+
+# set colours with custom scale
+coul.1 <- colorRampPalette(c("#00c087","#faffff","#ff4178"))
+coul.2 <- coul.1(5000)
+
+cc.1 <- rep(c("#af90b6", "#4f8096"), each=3)
+# 2 shades for 2 conditions 
+
+par(oma=c(1,10,1,5)); heatmap.2(x=heatmap_1, Rowv=dend.1, col=coul.2, trace="none", ColSideColors=rep(c("#af90b6", "#4f8096"), each=3), margins = c(6,3), labRow = FALSE, density.info="none", key.xlab="", key.ylab="", key.title="z-score", key.par=list(mar=c(3,0,3,2)), ylab="protein", xlab="biological condition", cexCol = 1)
+
+#write clusters to the heatmap
+clust_out <- cutree(clust, k = 2, h = NULL)
+clusters <- cbind(heatmap_1, clust_out)
+clusters <- as.matrix(clusters)
+
+write.csv(clusters, "~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/Proteome/Perseus/Post Hoc/proteome_clusters_SR.csv")
+
+```
+
+# phosphoproteomics 
+
+# Exploratory Data Analysis
+
+```{r, echo=T}
+
+PSM <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pST/pST_post hoc/pST_PSMs_all.txt")
+
+perseus <- t(scale(t(PSM)))
+
+pca_res <- prcomp(t(perseus))
+# creates a data table containing the principal component analysis info 
+
+var_explained = pca_res$sdev^2 / sum(pca_res$sdev^2)
+scree <- qplot(c(1:9), var_explained) + geom_line() + xlab("Principal Component") + ylab("Variance Explained") + ggtitle("Scree Plot") + ylim(0, 1) + xlim(1, 9) + scale_x_continuous(breaks=c(1:9))
+# make interactive
+int <- ggplotly(scree)
+int
+
+rowNames <- c(rep.int("adherent",3), rep.int("spheroid",3), rep.int("re-adherent",3))
+colData <- data.frame(row.names=rownames(pca_res$x),status=as.factor(rowNames))
+
+# get % variation for each PC 
+pca_res$percentVar <- pca_res$sdev^2/sum(pca_res$sdev^2)
+
+# change scale to reflect % variation
+d <- t(data.frame(t(pca_res$x)*pca_res$percentVar))
+
+# merge metadata and modified PC scores by row.names (by=0)
+d <- merge(d,colData,by=0) 
+
+# make the base plot (PC1 vs PC2)
+g <- ggplot(d,aes(x=PC1,y=PC2)) + theme_linedraw() + theme(text = element_text(family = "Arial", size=12))
+# display the plot
+PCA <- g + geom_point(size=2, aes(colour=status)) + geom_point(size=4,alpha=0.5, aes(colour=status)) + scale_colour_manual(breaks=rowNames) + scale_colour_manual(values=c("#9F83A8", "#98BBC7", "#9FA1C3")) + labs(x="Principal Component 1 (41.6%)", y="Principal Component 2 (18.3%)", col="Biological Group") + theme(legend.position = "bottom")
+PCA
+
+# make interactive
+int <- ggplotly(PCA)
+int
+```
+
+### heatmap + clustering
+
+```{r, echo=T}
+
+# import perseus results
+PSM <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pST/pST_post hoc/pST_PSMs_sig.txt")
+
+z_scored <- t(scale(t(PSM)))
+
+# mapping/statistical creation of clusters
+n <- nrow(z_scored)
+clust <- hclust(dist(z_scored[c(1:n), ]))
+dend <- as.dendrogram(clust)
+
+dend.1 <- color_branches(dend, k=7, col=c("#00a775","#ff4178","#7D82B8","#7E354D","#aee5c2","#523E79","#E67451")) %>% set("labels", "") 
+#plot(dend.1)
+
+# using base heatmap function
+heatmap_1 <- as.matrix(z_scored)
+
+# set colours with custom scale
+coul.1 <- colorRampPalette(c("#00c087","#faffff","#ff4178"))
+coul.2 <- coul.1(5000)
+
+cc.1 <- rep(c("#ffa6c0", "#af90b6", "#4f8096"), each=3)
+# 3 shades for 3 conditions 
+
+par(oma=c(1,10,1,5)); heatmap.2(x=heatmap_1, Rowv=dend.1, col=coul.2, trace="none", ColSideColors=rep(c("#ffa6c0", "#af90b6", "#4f8096"), each=3), margins = c(6,3), labRow = FALSE, density.info="none", key.xlab="", key.ylab="", key.title="z-score", key.par=list(mar=c(3,0,3,2)), ylab="phosphosite", xlab="biological condition", cexCol = 1)
+
+#write clusters to the heatmap
+clust_out <- cutree(clust, k = 7, h = NULL)
+clusters <- cbind(heatmap_1, clust_out)
+clusters <- as.matrix(clusters)
+
+write.csv(clusters, "~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pST/pST_post hoc/pST_clusters.csv")
+
+```
+
+### pairwise clustering
+
+```{r, echo=T}
+# adh vs sph
+
+
+# import perseus results
+PSM_AS <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pST/pST_post hoc/pST_sig_pairwise_AS.txt", header = TRUE, row.names = 1)
+
+z_scored_AS <- t(scale(t(PSM_AS)))
+
+# mapping/statistical creation of clusters
+n <- nrow(z_scored_AS)
+clust <- hclust(dist(z_scored_AS[c(1:n), ]))
+dend <- as.dendrogram(clust)
+
+dend.1 <- color_branches(dend, k=2, col=c("#007c4d","#a3003d")) %>% set("labels", "") 
+#plot(dend.1)
+
+# using base heatmap function
+heatmap_1 <- as.matrix(z_scored_AS)
+
+# set colours with custom scale
+coul.1 <- colorRampPalette(c("#00c087","#faffff","#ff4178"))
+coul.2 <- coul.1(5000)
+
+cc.1 <- rep(c("#ffa6c0", "#af90b6"), each=3)
+# 2 shades for 2 conditions 
+
+par(oma=c(1,10,1,5)); heatmap.2(x=heatmap_1, Rowv=dend.1, col=coul.2, trace="none", ColSideColors=rep(c("#ffa6c0", "#af90b6"), each=3), margins = c(6,3), labRow = FALSE, density.info="none", key.xlab="", key.ylab="", key.title="z-score", key.par=list(mar=c(3,0,3,2)), ylab="phosphosite", xlab="biological condition", cexCol = 1)
+
+#write clusters to the heatmap
+clust_out <- cutree(clust, k = 2, h = NULL)
+clusters <- cbind(heatmap_1, clust_out)
+clusters <- as.matrix(clusters)
+
+write.csv(clusters, "~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pST/pST_post hoc/pST_clusters_AS.csv")
+```
+
+```{r, echo=T}
+# sph vs read
+
+
+# import perseus results
+PSM_SR <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pST/pST_post hoc/pST_sig_pairwise_SR.txt", header = TRUE, row.names = 1)
+
+z_scored_SR <- t(scale(t(PSM_SR)))
+
+# mapping/statistical creation of clusters
+n <- nrow(z_scored_SR)
+clust <- hclust(dist(z_scored_SR[c(1:n), ]))
+dend <- as.dendrogram(clust)
+
+dend.1 <- color_branches(dend, k=2, col=c("#a3003d","#007c4d")) %>% set("labels", "") 
+#plot(dend.1)
+
+# using base heatmap function
+heatmap_1 <- as.matrix(z_scored_SR)
+
+# set colours with custom scale
+coul.1 <- colorRampPalette(c("#00c087","#faffff","#ff4178"))
+coul.2 <- coul.1(5000)
+
+cc.1 <- rep(c("#af90b6", "#4f8096"), each=3)
+# 2 shades for 2 conditions 
+
+par(oma=c(1,10,1,5)); heatmap.2(x=heatmap_1, Rowv=dend.1, col=coul.2, trace="none", ColSideColors=rep(c("#af90b6", "#4f8096"), each=3), margins = c(6,3), labRow = FALSE, density.info="none", key.xlab="", key.ylab="", key.title="z-score", key.par=list(mar=c(3,0,3,2)), ylab="phosphosite", xlab="biological condition", cexCol = 1)
+
+#write clusters to the heatmap
+clust_out <- cutree(clust, k = 2, h = NULL)
+clusters <- cbind(heatmap_1, clust_out)
+clusters <- as.matrix(clusters)
+
+write.csv(clusters, "~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pST/pST_post hoc/pST_clusters_SR.csv")
+
+```
+
+# phosphotyrosine
+
+# Exploratory Data Analysis
+
+```{r, echo=T}
+
+pSM <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pY/pY_R.txt", header = TRUE, row.names = 1)
+
+perseus <- t(scale(t(PSM)))
+
+pca_res <- prcomp(t(perseus))
+# creates a data table containing the principal component analysis info 
+
+var_explained = pca_res$sdev^2 / sum(pca_res$sdev^2)
+scree <- qplot(c(1:9), var_explained) + geom_line() + xlab("Principal Component") + ylab("Variance Explained") + ggtitle("Scree Plot") + ylim(0, 1) + xlim(1, 9) + scale_x_continuous(breaks=c(1:9))
+# make interactive
+int <- ggplotly(scree)
+int
+
+rowNames <- c(rep.int("adherent",3), rep.int("spheroid",3), rep.int("readhered",3))
+colData <- data.frame(row.names=rownames(pca_res$x),status=as.factor(rowNames))
+
+# get % variation for each PC 
+pca_res$percentVar <- pca_res$sdev^2/sum(pca_res$sdev^2)
+
+# change scale to reflect % variation
+d <- t(data.frame(t(pca_res$x)*pca_res$percentVar))
+
+# merge metadata and modified PC scores by row.names (by=0)
+d <- merge(d,colData,by=0) 
+
+# make the base plot (PC1 vs PC2)
+g <- ggplot(d,aes(x=PC1,y=PC2)) + theme_linedraw() + theme(text = element_text(family = "Arial", size=12))
+# display the plot
+PCA <- g + geom_point(size=2, aes(colour=status)) + geom_point(size=4,alpha=0.5, aes(colour=status)) + scale_colour_manual(breaks=rowNames) + scale_colour_manual(values=c("#ffa6c0", "#af90b6", "#4f8096")) + labs(x="Principal Component 1 (39.8%)", y="Principal Component 2 (17.5%)", col="Biological Group") + theme(legend.position = "bottom")
+PCA
+```
+
+### heatmap + clustering
+
+```{r, echo=T}
+
+# import perseus results
+pY <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pY/pY_R.txt", header = TRUE, row.names = 1)
+
+z_scored <- t(scale(t(pY)))
+
+# mapping/statistical creation of clusters
+n <- nrow(z_scored)
+clust <- hclust(dist(z_scored[c(1:n), ]))
+dend <- as.dendrogram(clust)
+
+dend.1 <- color_branches(dend, k=2, col=c("#00a775","#ff4178","#7D82B8","#7E354D","#aee5c2","#523E79","#E67451")) %>% set("labels", "") 
+#plot(dend.1)
+
+# using base heatmap function
+heatmap_1 <- as.matrix(z_scored)
+
+# set colours with custom scale
+coul.1 <- colorRampPalette(c("#00c087","#faffff","#ff4178"))
+coul.2 <- coul.1(5000)
+
+cc.1 <- rep(c("#ffa6c0", "#af90b6", "#4f8096"), each=3)
+# 3 shades for 3 conditions 
+
+par(oma=c(1,10,1,5)); heatmap.2(x=heatmap_1, Rowv=dend.1, col=coul.2, trace="none", ColSideColors=rep(c("#ffa6c0", "#af90b6", "#4f8096"), each=3), margins = c(6,3), labRow = FALSE, density.info="none", key.xlab="", key.ylab="", key.title="z-score", key.par=list(mar=c(3,0,3,2)), ylab="protein", xlab="biological condition", cexCol = 1)
+
+#write clusters to the heatmap
+clust_out <- cutree(clust, k = 2, h = NULL)
+clusters <- cbind(heatmap_1, clust_out)
+clusters <- as.matrix(clusters)
+
+write.csv(clusters, "~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pY/pY_clusters.csv")
+
+```
+
+### pairwise clustering
+
+```{r, echo=T}
+# adh vs sph
+
+
+# import perseus results
+PSM_AS <- read.table("~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pY/pY_R_AS.txt", header = TRUE, row.names = 1)
+
+z_scored_AS <- t(scale(t(PSM_AS)))
+
+# mapping/statistical creation of clusters
+n <- nrow(z_scored_AS)
+clust <- hclust(dist(z_scored_AS[c(1:n), ]))
+dend <- as.dendrogram(clust)
+
+dend.1 <- color_branches(dend, k=2, col=c("#007c4d","#a3003d")) %>% set("labels", "") 
+#plot(dend.1)
+
+# using base heatmap function
+heatmap_1 <- as.matrix(z_scored_AS)
+
+# set colours with custom scale
+coul.1 <- colorRampPalette(c("#00c087","#faffff","#ff4178"))
+coul.2 <- coul.1(5000)
+
+cc.1 <- rep(c("#ffa6c0", "#af90b6"), each=3)
+# 2 shades for 2 conditions 
+
+par(oma=c(1,10,1,5)); heatmap.2(x=heatmap_1, Rowv=dend.1, col=coul.2, trace="none", ColSideColors=rep(c("#ffa6c0", "#af90b6"), each=3), margins = c(6,3), labRow = FALSE, density.info="none", key.xlab="", key.ylab="", key.title="z-score", key.par=list(mar=c(3,0,3,2)), ylab="protein", xlab="biological condition", cexCol = 1)
+
+#write clusters to the heatmap
+clust_out <- cutree(clust, k = 2, h = NULL)
+clusters <- cbind(heatmap_1, clust_out)
+clusters <- as.matrix(clusters)
+
+write.csv(clusters, "~malloryfrederick/Dropbox/PhD Project work/Ovarian Cancer/Mass Spec/Project with Owen/Mass Spec/pY/pY_clusters_AS.csv")
+```
